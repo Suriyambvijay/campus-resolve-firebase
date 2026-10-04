@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Complaint Details | Campus Resolve</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="d-flex">
+  <div id="sidebarMount"></div>
+  <div class="main-cr">
+    <div id="topbarMount"></div>
+
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="cr-card p-4 mb-4" id="detailsCard"></div>
+        <div class="cr-card p-4" id="actionsCard"></div>
+      </div>
+      <div class="col-lg-5">
+        <div class="cr-card p-4">
+          <h6 class="mb-3">Progress Timeline</h6>
+          <ul class="timeline-cr" id="timelineList"></ul>
+        </div>
+        <div class="cr-card p-4 mt-4">
+          <h6 class="mb-3">Action History</h6>
+          <div id="historyList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/complaints-list.js"></script>
+<script>
+const STATUS_ORDER = ['Submitted', 'Assigned', 'Under Review', 'In Progress', 'Resolved', 'Feedback', 'Closed'];
+let COMPLAINT = null;
+let USER = null;
+
+function getId() { return new URLSearchParams(window.location.search).get('id'); }
+
+async function init() {
+  USER = await requireAuth();
+  if (!USER) return;
+  await loadDetails();
+}
+
+async function loadDetails() {
+  const id = getId();
+  if (!id) { document.getElementById('detailsCard').innerHTML = '<p class="text-danger">No complaint specified.</p>'; return; }
+
+  try {
+    const { complaint, history, rating } = await Api.get(`/complaints/${id}`);
+    COMPLAINT = complaint;
+    renderDetails(complaint);
+    renderTimeline(complaint);
+    renderHistory(history);
+    renderActions(complaint, rating);
+  } catch (err) {
+    document.getElementById('detailsCard').innerHTML = `<p class="text-danger">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderDetails(c) {
+  document.getElementById('detailsCard').innerHTML = `
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5 class="mb-1">${escapeHtml(c.title)}</h5>
+        <small class="text-muted">Complaint ID: <strong>${c.complaint_code}</strong></small>
+      </div>
+      <span class="${statusBadgeClass(c.status)} fs-6">${c.status}</span>
+    </div>
+    <hr>
+    <p class="mb-3">${escapeHtml(c.description)}</p>
+    <div class="row g-2 small">
+      <div class="col-6"><span class="text-muted">Category:</span> ${escapeHtml(c.category_name || '—')}</div>
+      <div class="col-6"><span class="text-muted">Department:</span> ${escapeHtml(c.department_name || '—')}</div>
+      <div class="col-6"><span class="text-muted">Location:</span> ${escapeHtml(c.location || '—')}</div>
+      <div class="col-6"><span class="text-muted">Priority:</span> <span class="priority-${c.priority}">${c.priority}</span></div>
+      <div class="col-6"><span class="text-muted">Submitted By:</span> ${escapeHtml(c.student_name)}</div>
+      <div class="col-6"><span class="text-muted">Assigned Coordinator:</span> ${escapeHtml(c.coordinator_name || 'Not yet assigned')}</div>
+      <div class="col-6"><span class="text-muted">Submitted Date:</span> ${formatDateTime(c.submitted_at)}</div>
+      <div class="col-6"><span class="text-muted">Deadline:</span> ${formatDate(c.deadline)} <small class="text-${c.deadline_info.level}">(${c.deadline_info.text})</small></div>
+      ${c.attachment_path ? `<div class="col-12"><span class="text-muted">Attachment:</span> <a href="${c.attachment_path}" target="_blank">View file</a></div>` : ''}
+      ${c.resolution_remarks ? `<div class="col-12 mt-2"><span class="text-muted">Resolution Remarks:</span><br>${escapeHtml(c.resolution_remarks)}</div>` : ''}
+    </div>`;
+}
+
+function renderTimeline(c) {
+  const idx = STATUS_ORDER.indexOf(c.status === 'Escalated' || c.status === 'Reopened' ? 'In Progress' : c.status);
+  const list = document.getElementById('timelineList');
+  list.innerHTML = STATUS_ORDER.map((s, i) => {
+    let cls = '';
+    if (i < idx) cls = 'done';
+    else if (i === idx) cls = 'active';
+    return `<li class="${cls}">${s}${c.status === 'Escalated' && s === 'In Progress' ? ' <span class="badge bg-danger ms-1">Escalated</span>' : ''}</li>`;
+  }).join('');
+}
+
+function renderHistory(history) {
+  const el = document.getElementById('historyList');
+  if (history.length === 0) { el.innerHTML = '<p class="text-muted small">No actions recorded yet.</p>'; return; }
+  el.innerHTML = history.map(h => `
+    <div class="mb-3 pb-2 border-bottom">
+      <div class="d-flex justify-content-between">
+        <strong class="small">${escapeHtml(h.action)}</strong>
+        <small class="text-muted">${formatDateTime(h.created_at)}</small>
+      </div>
+      <small class="text-muted">By: ${escapeHtml(h.performed_by_name || 'System')} (${escapeHtml(h.performed_by_role || 'system')})</small>
+      ${h.remarks ? `<p class="small mb-0 mt-1">${escapeHtml(h.remarks)}</p>` : ''}
+    </div>`).join('');
+}
+
+async function renderActions(c, rating) {
+  const el = document.getElementById('actionsCard');
+  const role = USER.role;
+
+  // Student/staff: rating after resolved
+  if (['student', 'staff'].includes(role) && c.user_id === USER.id) {
+    if (['Resolved'].includes(c.status)) {
+      el.innerHTML = `
+        <h6 class="mb-2">Your concern has been marked as resolved.</h6>
+        <p class="text-muted small">How satisfied are you with the resolution?</p>
+        <div class="mb-3" id="starRow">
+          ${[1,2,3,4,5].map(n => `<i class="bi bi-star-fill star-rate" data-val="${n}"></i>`).join('')}
+        </div>
+        <textarea class="form-control mb-3" id="feedbackText" rows="3" placeholder="Please share your feedback."></textarea>
+        <button class="btn btn-cr-primary" id="submitFeedbackBtn">SUBMIT FEEDBACK</button>`;
+      let selected = 0;
+      document.querySelectorAll('.star-rate').forEach(star => {
+        star.addEventListener('click', () => {
+          selected = parseInt(star.dataset.val);
+          document.querySelectorAll('.star-rate').forEach(s => s.classList.toggle('active', parseInt(s.dataset.val) <= selected));
+        });
+      });
+      document.getElementById('submitFeedbackBtn').addEventListener('click', async () => {
+        if (!selected) return showToast('Please select a star rating.', 'error');
+        try {
+          const res = await Api.post(`/complaints/${c.id}/rating`, { rating: selected, feedback: document.getElementById('feedbackText').value });
+          showToast(res.message, 'success');
+          loadDetails();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+    } else if (rating) {
+      el.innerHTML = `<h6>Your Feedback</h6><div class="mb-2">${'★'.repeat(rating.rating)}${'☆'.repeat(5 - rating.rating)}</div><p class="small text-muted">${escapeHtml(rating.feedback || '')}</p>`;
+    } else {
+      el.innerHTML = `<p class="text-muted small mb-0">No action needed right now. You will be notified as your concern progresses.</p>`;
+    }
+    return;
+  }
+
+  // Admin/HOD: assign coordinator
+  let html = '';
+  if (['admin', 'hod'].includes(role) && ['Submitted', 'Assigned'].includes(c.status)) {
+    const { coordinators } = await Api.get(`/admin/coordinators${c.department_id ? '?department_id=' + c.department_id : ''}`);
+    html += `
+      <div class="mb-4">
+        <h6>Assign Coordinator</h6>
+        <div class="d-flex gap-2">
+          <select class="form-select" id="coordSelect">
+            <option value="">Select coordinator...</option>
+            ${coordinators.map(co => `<option value="${co.id}">${escapeHtml(co.full_name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-cr-primary" id="assignBtn">Assign</button>
+        </div>
+      </div>`;
+  }
+
+  // Coordinator/HOD/Principal/Admin: status update
+  if (['coordinator', 'hod', 'principal', 'admin'].includes(role)) {
+    const nextOptions = {
+      Submitted: ['Under Review'], Assigned: ['Under Review', 'In Progress'],
+      'Under Review': ['In Progress', 'Resolved'], 'In Progress': ['Resolved'],
+      Resolved: ['Feedback'], Reopened: ['Under Review', 'In Progress'], Escalated: ['Under Review', 'In Progress', 'Resolved']
+    }[c.status] || [];
+
+    if (nextOptions.length > 0) {
+      html += `
+        <div class="mb-4">
+          <h6>Update Status</h6>
+          <select class="form-select mb-2" id="statusSelect">
+            ${nextOptions.map(s => `<option>${s}</option>`).join('')}
+          </select>
+          <textarea class="form-control mb-2" id="statusRemarks" rows="2" placeholder="Add remarks (visible to the student)..."></textarea>
+          <button class="btn btn-cr-primary" id="statusBtn">Update Status</button>
+        </div>`;
+    }
+
+    if (!['Resolved', 'Feedback', 'Closed', 'Escalated'].includes(c.status) && ['coordinator', 'hod', 'admin'].includes(role)) {
+      html += `
+        <div class="mb-2">
+          <h6>Escalate</h6>
+          <p class="small text-muted">If this concern cannot be resolved within the assigned scope, escalate it for further administrative attention.</p>
+          <textarea class="form-control mb-2" id="escalateRemarks" rows="2" placeholder="Reason for escalation (optional)..."></textarea>
+          <button class="btn btn-outline-danger" id="escalateBtn"><i class="bi bi-arrow-up-circle"></i> Escalate</button>
+        </div>`;
+    }
+  }
+
+  el.innerHTML = html || `<p class="text-muted small mb-0">No actions available for this complaint at this stage.</p>`;
+
+  document.getElementById('assignBtn')?.addEventListener('click', async () => {
+    const coordinator_id = document.getElementById('coordSelect').value;
+    if (!coordinator_id) return showToast('Please select a coordinator.', 'error');
+    try {
+      const res = await Api.post(`/complaints/${c.id}/assign`, { coordinator_id });
+      showToast(res.message, 'success'); loadDetails();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  document.getElementById('statusBtn')?.addEventListener('click', async () => {
+    const status = document.getElementById('statusSelect').value;
+    const remarks = document.getElementById('statusRemarks').value;
+    try {
+      const res = await Api.post(`/complaints/${c.id}/status`, { status, remarks });
+      showToast(res.message, 'success'); loadDetails();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  document.getElementById('escalateBtn')?.addEventListener('click', async () => {
+    const remarks = document.getElementById('escalateRemarks').value;
+    try {
+      const res = await Api.post(`/complaints/${c.id}/escalate`, { remarks });
+      showToast(res.message, 'warning'); loadDetails();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profile | Campus Resolve</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="d-flex">
+  <div id="sidebarMount"></div>
+  <div class="main-cr">
+    <div id="topbarMount"></div>
+    <div class="cr-card p-4" style="max-width:520px;">
+      <div class="text-center mb-4">
+        <i class="bi bi-person-circle" style="font-size:4rem; color:var(--cr-primary)"></i>
+      </div>
+      <div id="profileInfo"></div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+async function init() {
+  const user = await requireAuth();
+  if (!user) return;
+  document.getElementById('profileInfo').innerHTML = `
+    <div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">Full Name</span><strong>${escapeHtml(user.full_name)}</strong></div>
+    <div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">Email</span><strong>${escapeHtml(user.email)}</strong></div>
+    <div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">Role</span><strong>${ROLE_LABEL[user.role]}</strong></div>
+    <div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">Department</span><strong>${escapeHtml(user.department_name || '—')}</strong></div>
+    ${user.register_number ? `<div class="d-flex justify-content-between border-bottom py-2"><span class="text-muted">Register Number</span><strong>${escapeHtml(user.register_number)}</strong></div>` : ''}
+    <div class="d-flex justify-content-between py-2"><span class="text-muted">Phone</span><strong>${escapeHtml(user.phone || '—')}</strong></div>
+  `;
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard | Campus Resolve</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="../css/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="d-flex">
+  <div id="sidebarMount"></div>
+  <div class="main-cr">
+    <div id="topbarMount"></div>
+    <div id="welcomeBanner" class="cr-card p-4 mb-4"></div>
+    <div class="row g-3 mb-4" id="statsRow"></div>
+    <div class="row g-3" id="chartsRow"></div>
+    <div class="cr-card p-4 mt-4" id="quickSection"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="../js/firebase-config.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+const STAT_ICONS = {
+  total: ['bi-collection', '#6c4ee0'], pending: ['bi-hourglass-split', '#d8a400'],
+  under_review: ['bi-search', '#0d84d8'], in_progress: ['bi-gear', '#e0791d'],
+  resolved: ['bi-check-circle', '#1fa855'], escalated: ['bi-arrow-up-circle', '#c62828'],
+  deadline_exceeded: ['bi-exclamation-triangle', '#c62828'], awaiting_feedback: ['bi-star', '#9a6b00'],
+  average_rating: ['bi-star-fill', '#f5a623']
+};
+
+function statCard(label, value, key) {
+  const [icon, color] = STAT_ICONS[key] || ['bi-circle', '#6c4ee0'];
+  return `<div class="col-6 col-md-4 col-lg-3">
+    <div class="stat-card d-flex justify-content-between align-items-start">
+      <div><div class="text-muted small">${label}</div><div class="stat-value">${value ?? 0}</div></div>
+      <div class="stat-icon" style="background:${color}"><i class="bi ${icon}"></i></div>
+    </div></div>`;
+}
+
+async function loadDashboard() {
+  const user = await requireAuth();
+  if (!user) return;
+
+  document.getElementById('welcomeBanner').innerHTML = `
+    <h4 class="mb-1">Welcome, ${escapeHtml(user.full_name)} 👋</h4>
+    <p class="text-muted mb-0">Here is a summary of complaint activity relevant to your role.</p>`;
+
+  const { stats } = await Api.get('/complaints/stats/dashboard');
+  const statsRow = document.getElementById('statsRow');
+
+  if (['student', 'staff'].includes(user.role)) {
+    statsRow.innerHTML = [
+      statCard('Total Complaints', stats.total, 'total'),
+      statCard('Pending', stats.pending, 'pending'),
+      statCard('In Progress', stats.in_progress, 'in_progress'),
+      statCard('Resolved', stats.resolved, 'resolved'),
+      statCard('Awaiting Feedback', stats.awaiting_feedback, 'awaiting_feedback')
+    ].join('');
+    document.getElementById('quickSection').innerHTML = `
+      <h5 class="mb-3">Quick Actions</h5>
+      <a href="raise-complaint.html" class="btn btn-cr-primary me-2"><i class="bi bi-megaphone"></i> Raise a Concern</a>
+      <a href="my-complaints.html" class="btn btn-cr-outline"><i class="bi bi-card-list"></i> My Complaints</a>`;
+  } else if (user.role === 'coordinator') {
+    statsRow.innerHTML = [
+      statCard('Total Assigned', stats.total, 'total'),
+      statCard('Pending', stats.pending, 'pending'),
+      statCard('Under Review', stats.under_review, 'under_review'),
+      statCard('In Progress', stats.in_progress, 'in_progress'),
+      statCard('Resolved', stats.resolved, 'resolved'),
+      statCard('Escalated', stats.escalated, 'escalated'),
+      statCard('Deadline Exceeded', stats.deadline_exceeded, 'deadline_exceeded')
+    ].join('');
+    document.getElementById('quickSection').innerHTML = `<a href="assigned-complaints.html" class="btn btn-cr-primary"><i class="bi bi-card-checklist"></i> View Assigned Complaints</a>`;
+  } else if (user.role === 'hod') {
+    statsRow.innerHTML = [
+      statCard('Department Complaints', stats.total, 'total'),
+      statCard('Pending', stats.pending, 'pending'),
+      statCard('In Progress', stats.in_progress, 'in_progress'),
+      statCard('Resolved', stats.resolved, 'resolved'),
+      statCard('Escalated', stats.escalated, 'escalated'),
+      statCard('Deadline Exceeded', stats.deadline_exceeded, 'deadline_exceeded'),
+      statCard('Avg. Rating', stats.average_rating ?? '—', 'average_rating')
+    ].join('');
+    await loadCharts(['byCategory', 'byPriority']);
+    document.getElementById('quickSection').innerHTML = `
+      <a href="department-complaints.html" class="btn btn-cr-primary me-2"><i class="bi bi-building"></i> Department Complaints</a>
+      <a href="reports.html" class="btn btn-cr-outline"><i class="bi bi-file-earmark-pdf"></i> Reports</a>`;
+  } else if (user.role === 'principal') {
+    statsRow.innerHTML = [
+      statCard('Total Complaints', stats.total, 'total'),
+      statCard('Resolved', stats.resolved, 'resolved'),
+      statCard('Pending', stats.pending, 'pending'),
+      statCard('Escalated', stats.escalated, 'escalated'),
+      statCard('Deadline Exceeded', stats.deadline_exceeded, 'deadline_exceeded'),
+      statCard('Avg. Rating', stats.average_rating ?? '—', 'average_rating')
+    ].join('');
+    await loadCharts(['weeklyTrend', 'byDepartment', 'byCategory', 'byPriority', 'byStatus', 'satisfaction']);
+    document.getElementById('quickSection').innerHTML = `
+      <a href="all-complaints.html" class="btn btn-cr-primary me-2"><i class="bi bi-card-list"></i> All Complaints</a>
+      <a href="reports.html" class="btn btn-cr-outline"><i class="bi bi-file-earmark-pdf"></i> Reports</a>`;
+  } else if (user.role === 'admin') {
+    statsRow.innerHTML = [
+      statCard('Total Complaints', stats.total, 'total'),
+      statCard('Pending', stats.pending, 'pending'),
+      statCard('Resolved', stats.resolved, 'resolved'),
+      statCard('Escalated', stats.escalated, 'escalated'),
+      statCard('Deadline Exceeded', stats.deadline_exceeded, 'deadline_exceeded')
+    ].join('');
+    await loadCharts(['weeklyTrend', 'byDepartment', 'byCategory']);
+    document.getElementById('quickSection').innerHTML = `
+      <a href="manage-users.html" class="btn btn-cr-primary me-2"><i class="bi bi-people"></i> Manage Users</a>
+      <a href="manage-departments.html" class="btn btn-cr-outline me-2"><i class="bi bi-building-gear"></i> Departments & Categories</a>
+      <a href="all-complaints.html" class="btn btn-cr-outline"><i class="bi bi-card-list"></i> All Complaints</a>`;
+  }
+}
+
+async function loadCharts(which) {
+  const chartsRow = document.getElementById('chartsRow');
+  const blocks = {
+    weeklyTrend: '<div class="col-md-6"><div class="cr-card p-3"><h6>Weekly Complaint Trend</h6><canvas id="chartWeekly"></canvas></div></div>',
+    byDepartment: '<div class="col-md-6"><div class="cr-card p-3"><h6>Department-wise Complaints</h6><canvas id="chartDept"></canvas></div></div>',
+    byCategory: '<div class="col-md-6"><div class="cr-card p-3"><h6>Complaint Categories</h6><canvas id="chartCategory"></canvas></div></div>',
+    byPriority: '<div class="col-md-6"><div class="cr-card p-3"><h6>Priority Distribution</h6><canvas id="chartPriority"></canvas></div></div>',
+    byStatus: '<div class="col-md-6"><div class="cr-card p-3"><h6>Resolution Status</h6><canvas id="chartStatus"></canvas></div></div>',
+    satisfaction: '<div class="col-md-6"><div class="cr-card p-3"><h6>Student Satisfaction</h6><canvas id="chartSatisfaction"></canvas></div></div>'
+  };
+  chartsRow.innerHTML = which.map(w => blocks[w]).join('');
+
+  if (which.includes('weeklyTrend')) {
+    const { trend } = await Api.get('/analytics/trend/weekly');
+    new Chart(document.getElementById('chartWeekly'), { type: 'line', data: { labels: trend.map(t => t.day), datasets: [{ label: 'Complaints', data: trend.map(t => t.count), borderColor: '#6c4ee0', tension: 0.35 }] } });
+  }
+  if (which.includes('byDepartment')) {
+    const { data } = await Api.get('/analytics/by-department');
+    new Chart(document.getElementById('chartDept'), { type: 'bar', data: { labels: data.map(d => d.department_name), datasets: [{ label: 'Complaints', data: data.map(d => d.count), backgroundColor: '#4b3aa8' }] } });
+  }
+  if (which.includes('byCategory')) {
+    const { data } = await Api.get('/analytics/by-category');
+    new Chart(document.getElementById('chartCategory'), { type: 'doughnut', data: { labels: data.map(d => d.category_name), datasets: [{ data: data.map(d => d.count) }] } });
+  }
+  if (which.includes('byPriority')) {
+    const { data } = await Api.get('/analytics/by-priority');
+    new Chart(document.getElementById('chartPriority'), { type: 'bar', data: { labels: data.map(d => d.priority), datasets: [{ label: 'Complaints', data: data.map(d => d.count), backgroundColor: '#e0791d' }] } });
+  }
+  if (which.includes('byStatus')) {
+    const { data } = await Api.get('/analytics/by-status');
+    new Chart(document.getElementById('chartStatus'), { type: 'bar', data: { labels: data.map(d => d.status), datasets: [{ label: 'Complaints', data: data.map(d => d.count), backgroundColor: '#1fa855' }] } });
+  }
+  if (which.includes('satisfaction')) {
+    const { data } = await Api.get('/analytics/satisfaction');
+    new Chart(document.getElementById('chartSatisfaction'), { type: 'bar', data: { labels: data.map(d => d.rating + ' star'), datasets: [{ label: 'Responses', data: data.map(d => d.count), backgroundColor: '#f5a623' }] } });
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

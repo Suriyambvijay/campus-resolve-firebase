@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account | Campus Resolve</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="hero-cr d-flex align-items-center" style="min-height:100vh; padding-top:40px; padding-bottom:40px;">
+  <div class="container" style="max-width:560px;">
+    <div class="text-center mb-4">
+      <a href="index.html" class="navbar-brand-cr fs-4 text-decoration-none"><i class="bi bi-shield-check"></i> CAMPUS RESOLVE</a>
+    </div>
+    <div class="cr-card p-4 p-md-5">
+      <h4 class="fw-bold mb-1" style="color:var(--cr-primary)">Create your account</h4>
+      <p class="text-muted mb-4">Students and Staff can self-register below. Coordinator, HOD, Principal and Admin accounts are created by an authorized Administrator.</p>
+
+      <form id="registerForm">
+        <div class="mb-3">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-control" id="full_name" required>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" id="email" required>
+          </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Phone Number (optional)</label>
+            <input type="text" class="form-control" id="phone">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" id="password" minlength="8" required>
+          </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Confirm Password</label>
+            <input type="password" class="form-control" id="confirm_password" minlength="8" required>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Role</label>
+            <select class="form-select" id="role" required>
+              <option value="student">Student</option>
+              <option value="staff">Staff</option>
+            </select>
+          </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Department</label>
+            <select class="form-select" id="department_id"><option value="">Select Department</option></select>
+          </div>
+        </div>
+        <div class="mb-3" id="regNumberField">
+          <label class="form-label">Register Number</label>
+          <input type="text" class="form-control" id="register_number">
+        </div>
+        <button type="submit" class="btn btn-cr-primary w-100 py-2" id="registerBtn">Create Account</button>
+      </form>
+
+      <p class="text-center text-muted mt-4 mb-0">
+        Already have an account? <a href="login.html">Login</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/api.js"></script>
+<script>
+async function loadDepartments() {
+  try {
+    const { departments } = await Api.get('/public/departments');
+    const sel = document.getElementById('department_id');
+    departments.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id; opt.textContent = d.department_name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* silent */ }
+}
+loadDepartments();
+
+document.getElementById('role').addEventListener('change', (e) => {
+  document.getElementById('regNumberField').style.display = e.target.value === 'student' ? 'block' : 'none';
+});
+
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('registerBtn');
+  const password = document.getElementById('password').value;
+  const confirm_password = document.getElementById('confirm_password').value;
+  if (password !== confirm_password) return showToast('Passwords do not match.', 'error');
+
+  btn.disabled = true; btn.textContent = 'Creating account...';
+  const email = document.getElementById('email').value.trim();
+  try {
+    // Backend creates the Firebase Auth user (Admin SDK) + Firestore profile,
+    // enforcing that only Student/Staff can self-register.
+    await Api.post('/auth/register', {
+      full_name: document.getElementById('full_name').value.trim(),
+      email, password, confirm_password,
+      role: document.getElementById('role').value,
+      department_id: document.getElementById('department_id').value || null,
+      register_number: document.getElementById('register_number').value || null,
+      phone: document.getElementById('phone').value || null
+    });
+    // Now sign in client-side so the browser holds a real Firebase session.
+    await fbAuth.signInWithEmailAndPassword(email, password);
+    showToast('Account created successfully! Redirecting...', 'success');
+    setTimeout(() => window.location.href = '/pages/dashboard.html', 1000);
+  } catch (err) {
+    showToast(err.message, 'error');
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+});
+</script>
+</body>
+</html>

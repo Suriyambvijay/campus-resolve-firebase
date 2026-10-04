@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// ============================================================
+// Campus Resolve - Firestore Security Rules
+//
+// This app's frontend NEVER talks to Firestore directly - every
+// read/write goes through the Express backend, which uses the
+// Firebase Admin SDK (a privileged context that bypasses these
+// rules entirely). These rules exist purely as a safety net in
+// case a client SDK call is ever added by mistake: they deny all
+// direct access, except letting a signed-in user read their own
+// user profile document (handy for quick debugging).
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
